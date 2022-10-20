@@ -1,0 +1,167 @@
+/*******************************************************************************
+ *                                                                             *
+ * [FILE NAME]:   ultrasonic.c                                                 *
+ *                                                                             *
+ * [AUTHOR]:      Ahmed Saeed                                                  *
+ *                                                                             *
+ * [DATE]:        11/10/2022                                                   *
+ *                                                                             *
+ * [DESCRIPTION]: Source file for the ULTRASONIC driver                        *
+ *                                                                             *
+ *******************************************************************************/
+
+     /* Timing diagram
+     The Timing diagram is shown below. You only need to supply a short 10uS
+     pulse to the trigger input to start the ranging, and then the module will send out
+     an 8 cycle burst of ultrasound at 40 kHz and raise its echo. The Echo is a
+     distance object that is pulse width and the range in proportion .You can
+     calculate the range through the time interval between sending trigger signal and
+     receiving echo signal. Formula: uS / 58 = centimeters or uS / 148 =inch; or: the
+     range = high level time * velocity (340M/S) / 2; we suggest to use over 60ms
+     measurement cycle, in order to prevent trigger signal to the echo signal. */
+
+     /*A short ultrasonic pulse is transmitted at the time 0, reflected by an object. The sensor receives
+     this signal and converts it to an electric signal. The next pulse can be transmitted when the echo
+     is faded away. This time period is called cycle period. The recommend cycle period should be no
+     less than 50ms. If a 10μs width trigger pulse is sent to the signal pin, the Ultrasonic module will
+     output eight 40kHz ultrasonic signal and detect the echo back. The measured distance is
+     proportional to the echo pulse width and can be calculated by the formula below. If no obstacle
+     is detected, the output pin will give a 38ms high level signal.*/
+
+#include "ultrasonic.h"
+#include "icu.h"
+#include "gpio.h"
+#include "common_macros.h"
+#include "util/delay.h"
+
+/*******************************************************************************
+ *                           Global Variables                                  *
+ *******************************************************************************/
+uint8  g_edgeCount = 0;
+uint16 g_timeHigh = 0;
+uint16 g_timePeriod = 0;
+uint16 g_timePeriodPlusHigh = 0;
+
+/*******************************************************************************
+ *                      Functions Definitions                                  *
+ *******************************************************************************/
+/*
+ * Description :
+ * The Function responsible for Initializing the ICU driver.
+ * Setup the ICU call back function.
+ * Setup the direction for the trigger pin as output pin through the GPIO driver.
+ * Inputs: None
+ * Return: None
+ */
+void ULTRASONIC_init(void)
+{
+	/* Create configuration structure for ICU driver */
+	Icu_ConfigType Icu_Config = {F_CPU_8,RISING};
+
+	/* Set the Call back function pointer in the ICU driver */
+	Icu_setCallBack(ULTRASONIC_edgeProcessing);
+
+	/* Initialize ICU driver */
+	Icu_init(&Icu_Config);
+
+	/* Configure the direction for Trigger pin as output pin */
+	GPIO_setupPinDirection(ULTRASONIC_TRIGGER_PORT_ID,ULTRASONIC_TRIGGER_PIN_ID,PIN_OUTPUT);
+}
+
+/*
+ * Description :
+ * The Function responsible for Sending the Trigger pulse to the ultrasonic.
+ * Inputs: None
+ * Return: None
+ */
+void ULTRASONIC_trigger(void)
+{
+	/* Set the Trigger pin */
+	GPIO_writePin(ULTRASONIC_TRIGGER_PORT_ID,ULTRASONIC_TRIGGER_PIN_ID,LOGIC_HIGH);
+
+	/* transmit 10 micro seconds trigger pulse to the Ultrasonic Trigger Pin  */
+	_delay_us(10);
+
+	/* Put logic 0 on the Trigger pin */
+	GPIO_writePin(ULTRASONIC_TRIGGER_PORT_ID,ULTRASONIC_TRIGGER_PIN_ID,LOGIC_LOW);
+
+}
+
+/*
+ * Description :
+ * The Function responsible for Sending the trigger pulse by using ULTRASONIC_Trigger function.
+ * Start the measurements by the ICU from this moment.
+ * Inputs: None
+ * Return: The measured distance in Centimeter.
+ */
+uint16 ULTRASONIC_readDistance(void)
+{
+	uint16 total_distance;
+
+	/* Send the trigger pulse to start the timing diagram */
+	ULTRASONIC_trigger();
+
+	/* calculate distance in cm using sound velocity = 340 m/s
+	   distance = speed * time
+	   total distance = ((340000 * echo pulse time)/2)
+	   Total distance is divided by 2 because signal travels from Ultrasonic to object and returns
+       to the Ultrasonic
+	   Now, here we have selected an internal 8MHz oscillator frequency for ATmega32, with
+       Prescaler F_CPU/8 for timer frequency. Then time to execute 1 instruction is 1 us.
+       So, the timer gets incremented after 1 us time elapse.
+	   total distance = (17000 * timer value * 1*10^-6) = timer value / 58.8
+	   but we will use (distance = timer value / 58) here since proteus have calibration value = 58
+	   we calculate pulse time here by the calculating the difference of period time plus pulse time
+	   and period time to avoid ICU problems. */
+	total_distance = (float64)(g_timePeriodPlusHigh - g_timePeriod) / 58;
+
+	/* return The measured distance in Centimeter */
+	return total_distance;
+}
+
+/*
+ * Description :
+ * This is the call back function called by the ICU driver.
+ * This function is used to calculate the high time (pulse time) generated by the ultrasonic sensor.
+ * Inputs: None
+ * Return: None
+ */
+void ULTRASONIC_edgeProcessing(void)
+{
+	g_edgeCount++;
+		if(g_edgeCount == 1)
+		{
+			/*
+			 * Clear the timer counter register to start measurements from the
+			 * first detected rising edge
+			 */
+			Icu_clearTimerValue();
+			/* Detect falling edge */
+			Icu_setEdgeDetectionType(FALLING);
+		}
+		else if(g_edgeCount == 2)
+		{
+			/* Store the High time value */
+			g_timeHigh = Icu_getInputCaptureValue();
+			/* Detect rising edge */
+			Icu_setEdgeDetectionType(RISING);
+		}
+		else if(g_edgeCount == 3)
+		{
+			/* Store the Period time value */
+			g_timePeriod = Icu_getInputCaptureValue();
+			/* Detect falling edge */
+			Icu_setEdgeDetectionType(FALLING);
+		}
+		else if(g_edgeCount == 4)
+		{
+			/* Store the Period time value + High time value */
+			g_timePeriodPlusHigh = Icu_getInputCaptureValue();
+			/* Clear the timer counter register to start measurements again */
+			Icu_clearTimerValue();
+			/* Detect rising edge */
+			Icu_setEdgeDetectionType(RISING);
+            /* start counting edges from zero again for new cycle */
+			g_edgeCount = 0;
+		}
+}

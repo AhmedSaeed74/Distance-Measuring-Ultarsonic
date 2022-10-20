@@ -1,0 +1,32 @@
+
+
+#include "lcd.h"
+#include "ultrasonic.h"
+#include <avr/io.h> /* To use the SREG register */
+
+int main()
+{
+	uint32 freq = 0;
+
+	/* Enable Global Interrupt I-Bit */
+	SREG |= (1<<7);
+
+	/* Initialize both the LCD and ICU driver */
+	LCD_init();
+	ULTRASONIC_init();
+
+	while(1)
+	{
+		if(g_edgeCount == 4)
+		{
+			Icu_DeInit(); /* Disable ICU Driver */
+			g_edgeCount = 0;
+			LCD_displayString("freq = ");
+			/* calculate the freq */
+			freq = 1000000 / (g_timePeriodPlusHigh - g_timeHigh);;
+			/* display the freq on LCD screen */
+			LCD_intgerToString(freq);
+			LCD_displayString(" Hz");
+		}
+	}
+}

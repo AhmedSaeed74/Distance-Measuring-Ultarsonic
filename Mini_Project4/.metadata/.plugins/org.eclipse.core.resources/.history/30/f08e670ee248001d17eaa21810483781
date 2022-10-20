@@ -1,0 +1,29 @@
+#include "ultrasonic.h"
+#include "icu.h"
+
+void ULTRASONIC_init(void)
+{
+	/* Create configuration structure for ICU driver */
+	Icu_ConfigType Icu_Config = {F_CPU_8,RISING};
+
+	/* Set the Call back function pointer in the ICU driver */
+	Icu_setCallBack(ULTRASONIC_edgeProcessing);
+
+	/* Initialize both the LCD and ICU driver */
+	Icu_init(&Icu_Config);
+
+	GPIO_setupPinDirection(ULTRASONIC_TRIGGER_PORT_ID,ULTRASONIC_TRIGGER_PIN_ID,PIN_OUTPUT);
+
+}
+void ULTRASONIC_trigger(void)
+{
+
+}
+uint16 ULTRASONIC_readDistance(void)
+{
+
+}
+void ULTRASONIC_edgeProcessing(void)
+{
+
+}
